@@ -16,25 +16,37 @@ jobs:
 
             - name: Install libheif via vcpkg
               run: |
-                  vcpkg install libheif:x64-windows-static
+                  # We install the standard triplet
+                  vcpkg install libheif:x64-windows
                   vcpkg integrate install
 
             - name: Build Release
               shell: pwsh
               run: |
-                  # Dynamically find the vcpkg installation path
-                  $vcpkgPath = $env:VCPKG_INSTALLATION_ROOT
-                  $libPath = "$vcpkgPath\installed\x64-windows-static\lib"
+                  $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+                  $targetDir = "$vcpkgRoot\installed\x64-windows"
 
-                  # Set environment variables for the cargo process
-                  $env:LIBHEIF_PATH = "$vcpkgPath\installed\x64-windows-static"
-                  $env:VCPKG_ROOT = $vcpkgPath
-                  $env:RUSTFLAGS = "-L native=$libPath"
+                  # MANUALLY OVERRIDE the sys-crate's search logic
+                  # This prevents it from looking for that 'static-md' triplet
+                  $env:HEIF_LIB_DIR = "$targetDir\lib"
+                  $env:HEIF_INCLUDE_DIR = "$targetDir\include"
+                  $env:VCPKGRS_DYNAMIC = "1"
+
+                  # Ensure the linker finds the dependencies (de265, etc)
+                  $env:RUSTFLAGS = "-L native=$targetDir\lib"
 
                   cargo build --release
 
-            - name: Upload Executable
+            - name: Prepare Artifacts
+              shell: pwsh
+              run: |
+                  New-Item -ItemType Directory -Force -Path "dist"
+                  Copy-Item "target/release\ImgViewer.exe" -Destination "dist\"
+                  # Copy ALL necessary DLLs from the vcpkg bin folder
+                  Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" -Destination "dist\"
+
+            - name: Upload Zip
               uses: actions/upload-artifact@v4
               with:
-                  name: ImgViewer-Windows
-                  path: target/release/ImgViewer.exe
+                  name: ImgViewer-Windows-Portable
+                  path: dist/
