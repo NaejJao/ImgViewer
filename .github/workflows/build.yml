@@ -1,35 +1,36 @@
 name: Build Windows Release
 
 on:
-    push:
-        branches: ["main", "master"]
+  push:
+    branches: [ "main", "master" ]
 
 jobs:
-    build-windows:
-        runs-on: windows-latest
+  build-windows:
+    runs-on: windows-latest
 
-        steps:
-            - uses: actions/checkout@v4
+    steps:
+    - uses: actions/checkout@v4
 
-            - name: Install Rust
-              uses: dtolnay/rust-toolchain@stable
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
 
-            - name: Install libheif via vcpkg
-              run: |
-                  vcpkg install libheif:x64-windows-static
-                  vcpkg integrate install
+    - name: Install libheif via vcpkg
+      run: |
+        vcpkg install libheif:x64-windows-static
+        vcpkg integrate install
 
-            - name: Build Release
-              run: cargo build --release
-              env:
-                  # Use the built-in path provided by the runner
-                  VCPKG_ROOT: ${{ env.VCPKG_INSTALLATION_ROOT }}
-                  # These flags ensure libheif-sys picks up the static version correctly
-                  LIBHEIF_STATIC: 1
-                  RUSTFLAGS: "-C target-feature=+crt-static"
+    - name: Build Release
+      run: cargo build --release
+      env:
+        # 1. Point to the specific static library folder
+        VCPKG_ROOT: ${{ env.VCPKG_INSTALLATION_ROOT }}
+        # 2. Tell the sys-crate exactly where the libraries are
+        LIBHEIF_PATH: ${{ env.VCPKG_INSTALLATION_ROOT }}\installed\x64-windows-static
+        # 3. Help the linker find the dependencies vcpkg just built
+        RUSTFLAGS: "-L ${{ env.VCPKG_INSTALLATION_ROOT }}\installed\x64-windows-static\lib"
 
-            - name: Upload Executable
-              uses: actions/upload-artifact@v4
-              with:
-                  name: ImgViewer-Windows
-                  path: target/release/ImgViewer.exe
+    - name: Upload Executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: ImgViewer-Windows
+        path: target/release/ImgViewer.exe
