@@ -277,16 +277,29 @@ impl eframe::App for LeanViewer {
 
                 if self.show_about {
                     egui::Window::new("About")
-                        .collapsible(false).resizable(false)
+                        .collapsible(false)
+                        .resizable(false)
                         .pivot(egui::Align2::CENTER_CENTER)
                         .default_pos(display_rect.center())
                         .show(ctx, |ui| {
                             ui.vertical_centered(|ui| {
+                                ui.add_space(5.0);
                                 ui.heading("ImgViewer");
                                 ui.label("v0.1.0");
+                                ui.add_space(5.0);
                                 ui.separator();
-                                ui.label("A lean, mean tiled image viewer written in Rust.\n\nDeveloper: Jean Schifflers.");
+                                ui.add_space(5.0);
+                                ui.label("A lean, mean tiled image viewer.");
+                                ui.add_space(5.0);
                                 ui.separator();
+                                ui.add_space(5.0);
+                                ui.horizontal(|ui| {
+                                    ui.label("Developer:");
+                                    ui.label(egui::RichText::new("Jean Schifflers").strong());
+                                });
+                                ui.add_space(5.0);
+                                ui.separator();
+                                ui.add_space(5.0);
                                 ui.vertical(|ui| {
                                     ui.label(egui::RichText::new("Keyboard shortcuts:").strong());
                                     ui.label("• F: Toggle Zoom ( fit / 100% )");
@@ -294,6 +307,40 @@ impl eframe::App for LeanViewer {
                                     ui.label("• ESC: Exit");
                                     ui.label("• Arrows: Navigate album");
                                 });
+
+                                ui.add_space(10.0);
+
+                                ui.collapsing("Legal & Credits", |ui| {
+                                    ui.set_max_width(250.0);
+
+                                    // Language credit
+                                    ui.horizontal(|ui| {
+                                        ui.label("Built with");
+                                        ui.hyperlink_to(egui::RichText::new("Rust").color(egui::Color32::from_rgb(222, 165, 132)).strong(), "https://www.rust-lang.org");
+                                        ui.label("🦀");
+                                    });
+
+                                    ui.separator();
+                                    ui.small("This software uses the following Open Source components:");
+
+                                    ui.add_space(5.0);
+                                    ui.horizontal(|ui| {
+                                        ui.small("UI & Engine:");
+                                        ui.hyperlink_to(egui::RichText::new("egui").small(), "https://github.com/emilk/egui");
+                                    });
+
+                                    ui.horizontal(|ui| {
+                                        ui.small("HEIC Support:");
+                                        ui.hyperlink_to(egui::RichText::new("libheif-rs").small(), "https://github.com/strukturag/libheif");
+                                    });
+
+                                    ui.small("Image Processing: image-rs");
+
+                                    ui.add_space(5.0);
+                                    ui.label(egui::RichText::new("HEIC Notice:").small().strong());
+                                    ui.small("Decoding is powered by libheif. This may include x265 (GPL) or aom (BSD) dependencies depending on the linked library version.");
+                                });
+
                                 ui.add_space(10.0);
                                 if ui.button("Close").clicked() { self.show_about = false; }
                             });
