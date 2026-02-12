@@ -17,14 +17,16 @@ jobs:
             - name: Install libheif via vcpkg
               run: |
                   vcpkg install libheif:x64-windows-static
+                  vcpkg integrate install
 
             - name: Build Release
               run: cargo build --release
               env:
-                  # Tell Rust to look for the built-in vcpkg
-                  VCPKG_ROOT: C:\smoketest\vcpkg
-                  # Force static linking so you don't need to hunt for .dll files
+                  # Use the built-in path provided by the runner
+                  VCPKG_ROOT: ${{ env.VCPKG_INSTALLATION_ROOT }}
+                  # These flags ensure libheif-sys picks up the static version correctly
                   LIBHEIF_STATIC: 1
+                  RUSTFLAGS: "-C target-feature=+crt-static"
 
             - name: Upload Executable
               uses: actions/upload-artifact@v4
