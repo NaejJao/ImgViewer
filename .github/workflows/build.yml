@@ -1,52 +1,53 @@
 name: Build Windows Release
 
 on:
-    push:
-        branches: ["main", "master"]
+  push:
+    branches: ["main", "master"]
 
 jobs:
-    build-windows:
-        runs-on: windows-latest
+  build-windows:
+    runs-on: windows-latest
 
-        steps:
-            - uses: actions/checkout@v4
+    steps:
+      - uses: actions/checkout@v4
 
-            - name: Install Rust
-              uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-            - name: Install libheif via vcpkg
-              run: |
-                  # We install the standard triplet
-                  vcpkg install libheif:x64-windows
-                  vcpkg integrate install
+      - name: Install libheif via vcpkg
+        run: |
+          # We install the standard triplet
+          vcpkg install libheif:x64-windows
+          vcpkg integrate install
 
-            - name: Build Release
-              shell: pwsh
-              run: |
-                  $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
-                  $targetDir = "$vcpkgRoot\installed\x64-windows"
+      - name: Build Release
+        shell: pwsh
+        run: |
+          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+          $targetDir = "$vcpkgRoot\installed\x64-windows"
 
-                  # MANUALLY OVERRIDE the sys-crate's search logic
-                  # This prevents it from looking for that 'static-md' triplet
-                  $env:HEIF_LIB_DIR = "$targetDir\lib"
-                  $env:HEIF_INCLUDE_DIR = "$targetDir\include"
-                  $env:VCPKGRS_DYNAMIC = "1"
+          # MANUALLY OVERRIDE the sys-crate's search logic
+          # This prevents it from looking for that 'static-md' triplet
+          $env:HEIF_LIB_DIR = "$targetDir\lib"
+          $env:HEIF_INCLUDE_DIR = "$targetDir\include"
+          $env:VCPKGRS_DYNAMIC = "1"
 
-                  # Ensure the linker finds the dependencies (de265, etc)
-                  $env:RUSTFLAGS = "-L native=$targetDir\lib"
+          # Ensure the linker finds the dependencies (de265, etc)
+          $env:RUSTFLAGS = "-L native=$targetDir\lib"
 
-                  cargo build --release
+          cargo clean
+          cargo build --release
 
-            - name: Prepare Artifacts
-              shell: pwsh
-              run: |
-                  New-Item -ItemType Directory -Force -Path "dist"
-                  Copy-Item "target/release\ImgViewer.exe" -Destination "dist\"
-                  # Copy ALL necessary DLLs from the vcpkg bin folder
-                  Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" -Destination "dist\"
+      - name: Prepare Artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "dist"
+          Copy-Item "target/release\ImgViewer.exe" -Destination "dist\"
+          # Copy ALL necessary DLLs from the vcpkg bin folder
+          Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" -Destination "dist\"
 
-            - name: Upload Zip
-              uses: actions/upload-artifact@v4
-              with:
-                  name: ImgViewer-Windows-Portable
-                  path: dist/
+      - name: Upload Zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImgViewer-Windows-Portable
+          path: dist/
