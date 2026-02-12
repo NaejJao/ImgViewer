@@ -14,17 +14,21 @@ jobs:
             - name: Install Rust
               uses: dtolnay/rust-toolchain@stable
 
-            - name: Install vcpkg and libheif
+            - name: Setup vcpkg
+              uses: lukka/run-vcpkg@v11
+              with:
+                  vcpkgGitCommitId: "df3697e8840a6e3090623a6358c8a14b10b05b63" # Update to a recent commit if needed
+
+            - name: Install libheif via vcpkg
               run: |
-                  vcpkg integrate install
-                  vcpkg install libheif:x64-windows-static-md
-              # This builds a version of libheif that is easier to link
+                  vcpkg install libheif:x64-windows
 
             - name: Build Release
               run: cargo build --release
               env:
-                  # Help the linker find the vcpkg libraries
-                  VCPKG_ROOT: C:\smoketest\vcpkg
+                  # These env vars tell the 'libheif-sys' crate to use vcpkg to find the library
+                  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+                  VCPKGRS_DYNAMIC: 1
 
             - name: Upload Executable
               uses: actions/upload-artifact@v4
