@@ -26,12 +26,12 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_fullscreen(true)
-            .with_active(true), // Explicitly request active state on launch
+            .with_active(true),
         ..Default::default()
     };
 
     eframe::run_native(
-        "Ultimate Lean Viewer",
+        "ImgViewer",
         options,
         Box::new(|cc| Ok(Box::new(LeanViewer::new(cc, PathBuf::from(&args[1]))))),
     )
@@ -42,11 +42,13 @@ struct LeanViewer {
     full_size: egui::Vec2,
     offset: egui::Vec2,
     zoom: f32,
+    rotation_steps: i32,
     first_frame: bool,
     current_path: PathBuf,
     album: Vec<PathBuf>,
     rx: Receiver<LoadedImage>,
     tx: Sender<LoadedImage>,
+    show_about: bool,
 }
 
 impl LeanViewer {
@@ -58,11 +60,13 @@ impl LeanViewer {
             full_size,
             offset: egui::Vec2::ZERO,
             zoom: 1.0,
+            rotation_steps: 0,
             first_frame: true,
             current_path: path,
             album,
             rx,
             tx,
+            show_about: false,
         }
     }
 
@@ -75,7 +79,6 @@ impl LeanViewer {
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_lowercase();
-
         let img = if ext == "heic" || ext == "heif" {
             Self::decode_heic(path).expect("HEIC decoding failed")
         } else {
@@ -146,24 +149,20 @@ impl LeanViewer {
         let context = libheif_rs::HeifContext::read_from_file(path.to_str().unwrap())?;
         let handle = context.primary_image_handle()?;
         let libheif = libheif_rs::LibHeif::new();
-
         let image = libheif.decode(
             &handle,
             libheif_rs::ColorSpace::Rgb(libheif_rs::RgbChroma::Rgba),
             None,
         )?;
-
         let width = image.width();
         let height = image.height();
         let interleaved = image.planes().interleaved.ok_or("No interleaved plane")?;
-
         let mut rgba_data = Vec::with_capacity((width * height * 4) as usize);
         for y in 0..height {
             let start = (y as usize) * interleaved.stride;
             let end = start + (width as usize) * 4;
             rgba_data.extend_from_slice(&interleaved.data[start..end]);
         }
-
         let buffer = image::RgbaImage::from_raw(width, height, rgba_data).ok_or("Buffer fail")?;
         Ok(image::DynamicImage::ImageRgba8(buffer))
     }
@@ -173,7 +172,6 @@ impl LeanViewer {
             let new_index = (pos as i32 + delta).rem_euclid(self.album.len() as i32) as usize;
             let path = self.album[new_index].clone();
             let tx = self.tx.clone();
-
             std::thread::spawn(move || {
                 let (tiles, full_size, _) = Self::load_assets(&ctx, &path);
                 let _ = tx.send(LoadedImage {
@@ -189,15 +187,12 @@ impl LeanViewer {
 
 impl eframe::App for LeanViewer {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if self.first_frame {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-        }
-
         if let Ok(loaded) = self.rx.try_recv() {
             self.tiles = loaded.tiles;
             self.full_size = loaded.full_size;
             self.current_path = loaded.path;
             self.offset = egui::Vec2::ZERO;
+            self.rotation_steps = 0;
             self.first_frame = true;
         }
 
@@ -211,86 +206,99 @@ impl eframe::App for LeanViewer {
             if i.key_pressed(egui::Key::Escape) {
                 std::process::exit(0);
             }
+            if i.key_pressed(egui::Key::R) {
+                self.rotation_steps = (self.rotation_steps + 1) % 4;
+            }
         });
 
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
             .show(ctx, |ui| {
-                if self.first_frame {
-                    ui.memory_mut(|mem| mem.request_focus(egui::Id::new("main_view")));
-                }
-                let screen_rect = ui.max_rect();
+                let display_rect = ui.max_rect();
+                let is_sideways = self.rotation_steps % 2 != 0;
+                let effective_size = if is_sideways { egui::vec2(self.full_size.y, self.full_size.x) } else { self.full_size };
 
-                let fit_zoom = (screen_rect.width() / self.full_size.x)
-                    .min(screen_rect.height() / self.full_size.y);
-
-                if self.first_frame && screen_rect.width() > 1.0 {
+                let fit_zoom = (display_rect.width() / effective_size.x).min(display_rect.height() / effective_size.y);
+                if self.first_frame && display_rect.width() > 1.0 {
                     self.zoom = fit_zoom;
                     self.first_frame = false;
                 }
 
+                let (_rect, response) = ui.allocate_at_least(ui.available_size(), egui::Sense::click_and_drag());
+                if response.double_clicked() {
+                    if (self.zoom - fit_zoom).abs() < 0.01 { self.zoom = 1.0; } else { self.zoom = fit_zoom; }
+                    self.offset = egui::Vec2::ZERO;
+                }
+
                 ui.input(|i| {
+                    if i.key_pressed(egui::Key::F) {
+                        if (self.zoom - fit_zoom).abs() < 0.01 { self.zoom = 1.0; } else { self.zoom = fit_zoom; }
+                        self.offset = egui::Vec2::ZERO;
+                    }
                     if i.smooth_scroll_delta.y != 0.0 {
                         let zoom_factor = (i.smooth_scroll_delta.y * 0.005).exp();
                         self.zoom *= zoom_factor;
                         if let Some(mouse_pos) = i.pointer.hover_pos() {
-                            let center = screen_rect.center() + self.offset;
+                            let center = display_rect.center() + self.offset;
                             self.offset -= (mouse_pos - center) * (zoom_factor - 1.0);
                         }
                     }
-                    if i.pointer.any_down() {
-                        self.offset += i.pointer.delta();
-                    }
-
-                    // Double Click reset OR press 'F'
-                    if i.pointer
-                        .button_double_clicked(egui::PointerButton::Primary)
-                        || i.key_pressed(egui::Key::F)
-                    {
-                        self.zoom = fit_zoom;
-                        self.offset = egui::Vec2::ZERO;
-                    }
-                    // Press '1' for 100% scale
-                    if i.key_pressed(egui::Key::Num1) {
-                        self.zoom = 1.0;
-                        self.offset = egui::Vec2::ZERO;
-                    }
+                    if i.pointer.any_down() { self.offset += i.pointer.delta(); }
                 });
 
-                // Render Tiles
-                let center = screen_rect.center() + self.offset;
+                response.context_menu(|ui| {
+                    if ui.button("About").clicked() { self.show_about = true; ui.close_kind(egui::UiKind::Menu); }
+                    ui.separator();
+                    if ui.button("Exit").clicked() { std::process::exit(0); }
+                });
+
+                let center = display_rect.center() + self.offset;
+                let rotation_angle = self.rotation_steps as f32 * std::f32::consts::FRAC_PI_2;
+                let rot = egui::emath::Rot2::from_angle(rotation_angle);
+
                 for tile in &self.tiles {
                     let tile_size = tile.rect.size() * self.zoom;
-                    let rel_pos = (tile.rect.min.to_vec2() - self.full_size / 2.0) * self.zoom;
-                    let rect = egui::Rect::from_min_size(center + rel_pos, tile_size);
-                    ui.painter().image(
-                        tile.texture.id(),
+
+                    // Convert relative position to Vec2 before rotation
+                    let tile_rel_to_center = (tile.rect.center() - (self.full_size / 2.0)).to_vec2();
+                    let rotated_pos = rot * tile_rel_to_center;
+
+                    let rect = egui::Rect::from_center_size(center + rotated_pos * self.zoom, tile_size);
+
+                    let mut mesh = egui::Mesh::with_texture(tile.texture.id());
+                    mesh.add_rect_with_uv(
                         rect,
                         egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
                         egui::Color32::WHITE,
                     );
+                    mesh.rotate(rot, rect.center());
+                    ui.painter().add(mesh);
                 }
 
-                // UI Overlay
-                let filename = self
-                    .current_path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy();
-                let info_text = format!(
-                    "{} • {:.0}x{:.0} • {:.0}%",
-                    filename,
-                    self.full_size.x,
-                    self.full_size.y,
-                    self.zoom * 100.0
-                );
-                ui.painter().text(
-                    screen_rect.left_bottom() + egui::vec2(10.0, -10.0),
-                    egui::Align2::LEFT_BOTTOM,
-                    info_text,
-                    egui::FontId::proportional(14.0),
-                    egui::Color32::from_white_alpha(120),
-                );
+                if self.show_about {
+                    egui::Window::new("About")
+                        .collapsible(false).resizable(false)
+                        .pivot(egui::Align2::CENTER_CENTER)
+                        .default_pos(display_rect.center())
+                        .show(ctx, |ui| {
+                            ui.vertical_centered(|ui| {
+                                ui.heading("ImgViewer");
+                                ui.label("v0.1.0");
+                                ui.separator();
+                                ui.label("A lean, mean tiled image viewer written in Rust.\n\nDeveloper: Jean Schifflers.");
+                                ui.separator();
+                                ui.vertical(|ui| {
+                                    ui.label(egui::RichText::new("Keyboard shortcuts:").strong());
+                                    ui.label("• F: Toggle Zoom ( fit / 100% )");
+                                    ui.label("• R: Rotate 90° clockwise");
+                                    ui.label("• ESC: Exit");
+                                    ui.label("• Arrows: Navigate album");
+                                });
+                                ui.add_space(10.0);
+                                if ui.button("Close").clicked() { self.show_about = false; }
+                            });
+                        });
+                }
             });
     }
 }
