@@ -1,0 +1,33 @@
+name: Build Windows Release
+
+on:
+    push:
+        branches: ["main", "master"]
+
+jobs:
+    build-windows:
+        runs-on: windows-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Install vcpkg and libheif
+              run: |
+                  vcpkg integrate install
+                  vcpkg install libheif:x64-windows-static-md
+              # This builds a version of libheif that is easier to link
+
+            - name: Build Release
+              run: cargo build --release
+              env:
+                  # Help the linker find the vcpkg libraries
+                  VCPKG_ROOT: C:\smoketest\vcpkg
+
+            - name: Upload Executable
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ImgViewer-Windows
+                  path: target/release/ImgViewer.exe
