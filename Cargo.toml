@@ -7,3 +7,4 @@ edition = "2024"
 eframe = "0.33"
 image = { version = "0.25", features = ["gif", "jpeg", "png", "webp", "tiff", "tga", "bmp"] }
 libheif-rs = "1.1.0"
+winres = "0.1"
