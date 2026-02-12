@@ -8,3 +8,9 @@ eframe = "0.33"
 image = { version = "0.25", features = ["gif", "jpeg", "png", "webp", "tiff", "tga", "bmp"] }
 libheif-rs = "1.1.0"
 winres = "0.1"
+
+[profile.release]
+opt-level = 'z'     # Optimize for size
+lto = true          # Link Time Optimization (huge size reduction)
+codegen-units = 1   # Better optimization at the cost of slower compile
+panic = 'abort'     # Removes stack unwinding code
